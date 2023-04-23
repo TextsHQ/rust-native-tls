@@ -600,3 +600,44 @@ fn badssl_cipher_suites_no_rsa() {
 //     let s = p!(TcpStream::connect("mozilla-intermediate.badssl.com:443"));
 //     p!(builder.connect("mozilla-intermediate.badssl.com", s));
 // }
+
+#[test]
+fn ja3_test() {
+    let builder = p!(TlsConnector::builder()
+    .supported_cipher_suites(
+        // Oddly, on Windows, allowing RSA key exchange, but not RSA signature algorithms still
+        // allows a successful TLS connection, despite there being no non-RSA signature cipher
+        // suites in the Mozilla Intermediate set AFAICT. Removing RSA from the key exchange
+        // algorithms causes this test to work as expected.
+        CipherSuiteSet::default()
+            .key_exchange_algorithms(&[
+                TlsKeyExchangeAlgorithm::Dhe,
+                TlsKeyExchangeAlgorithm::Ecdhe,
+                TlsKeyExchangeAlgorithm::Rsa,
+            ])
+            .bulk_encryption_algorithms(&[
+                TlsBulkEncryptionAlgorithm::Aes128,
+                TlsBulkEncryptionAlgorithm::Aes256,
+            ])
+            .signature_algorithms(&[
+                TlsSignatureAlgorithm::Rsa,
+                TlsSignatureAlgorithm::Ecdsa,
+            ])
+            .hash_algorithms(&[
+                TlsHashAlgorithm::Sha1,
+                TlsHashAlgorithm::Sha256,
+                TlsHashAlgorithm::Sha384,
+            ])
+    )
+    .build());
+    let s = p!(TcpStream::connect("check.ja3.zone:443"));
+    let mut socket = p!(builder.connect("check.ja3.zone", s));
+
+    p!(socket.write_all(b"GET / HTTP/1.1\r\nUser-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15\r\n\r\n"));
+    let mut result = vec![];
+    p!(socket.read_to_end(&mut result));
+
+    println!("{}", String::from_utf8_lossy(&result));
+    assert!(result.starts_with(b"HTTP/1.1"));
+    assert!(result.ends_with(b"}"));
+}
